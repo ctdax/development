@@ -15,7 +15,7 @@ def drawTriangle(lineshape, img, imagecenter, tkdxy_err, max_dxy_err, tk_pt, max
     line_magnitude = m.sqrt((lineshape[1][0]-lineshape[0][0])**2 + (lineshape[1][1]-lineshape[0][1])**2)
 
     #Calculate magnitude of the base based on the pt of the track
-    base_magnitude = (line_magnitude/2) * m.log(tk_pt)/m.log(max_tk_pt)
+    base_magnitude = (line_magnitude/6) * m.log(tkdxy_err)/m.log(max_dxy_err)
 
     #Calculate the angle of the rotated track
     tk_theta = calculateAngle(lineshape[1][0]-lineshape[0][0], lineshape[0][1]-lineshape[1][1])
@@ -35,7 +35,7 @@ def drawTriangle(lineshape, img, imagecenter, tkdxy_err, max_dxy_err, tk_pt, max
         corner2 = (lineshape[1][0] + xcorner, lineshape[1][1] + ycorner)
 
     #Calculate the greyscale of the trinagle based on the tk primary dxy error
-    grayscale = int(200 * tkdxy_err/max_dxy_err)
+    grayscale = int(240 * m.log(tk_pt)/m.log(max_tk_pt))
 
     #Draw triangle
     img.polygon(xy=[initial_points, corner1, corner2], fill=None, outline=grayscale)
@@ -195,6 +195,123 @@ def RotateComponents(x_initial_list, y_initial_list, x_final_list, y_final_list,
     return x_final_list_rotated_fixed, y_final_list_rotated_fixed
 
 
+def createVertexImage(stree, btree, event, vertex, ImageFilePath=None, IsSignal=True, showTitle=False):
+    # Obtain momentum data
+    px, py, pt, dxy, dxy_err, vtx_x, vtx_y = ObtainData(IsSignal)
+
+    # Obtain max data
+    Smaxpx, Smaxpy, Smaxpt, Smax_dxy_err = GetMaxVar(stree['vtx_tk_px'].array()), GetMaxVar(stree['vtx_tk_py'].array()), \
+                                           GetMaxVar(stree['vtx_tk_pt'].array()), GetMaxVar(stree['vtx_tk_dxyerr'].array())
+    Bmaxpx, Bmaxpy, Bmaxpt, Bmax_dxy_err = GetMaxVar(btree['vtx_tk_px'].array()), GetMaxVar(btree['vtx_tk_py'].array()), \
+                                           GetMaxVar(btree['vtx_tk_pt'].array()), GetMaxVar(btree['vtx_tk_dxyerr'].array())
+    maxpx, maxpy, maxpt, max_dxy_err = max(Smaxpx, Bmaxpx), max(Smaxpy, Bmaxpy), max(Smaxpt, Bmaxpt), max(Smax_dxy_err,
+                                                                                                          Bmax_dxy_err)
+
+    # Obtain vertex data
+    try:
+        px0 = px[event][vertex]
+        py0 = py[event][vertex]
+        pt0 = pt[event][vertex]
+        dxy0 = dxy[event][vertex]
+        vtx_x0 = vtx_x[event][vertex]
+        vtx_y0 = vtx_y[event][vertex]
+        dxy_err0 = dxy_err[event][vertex]
+    except ValueError:
+        if IsSignal == True:
+            print("There is no data in the signal file for event number " + str(event))
+            return
+        else:
+            print("There is no data in the background file for event number " + str(event))
+            return
+
+    # Calculate secondary dxy
+    tk2_dx, tk2_dy = calculateSecondaryDXY(px0, py0, dxy0, vtx_x0, vtx_y0)
+
+    # Create image
+    w, h = 224, 224
+    center = int(w / 2)
+    x_initial_list, y_initial_list, x_final_list, y_final_list = calculateXYImage(px0, py0, maxpx, maxpy, tk2_dx,
+                                                                                  tk2_dy, center, 4 / 5, 1)
+    img = Image.new(mode='L', size=(w, h), color=255)
+    img1 = ImageDraw.Draw(img)
+
+    # Draw circle at image center to represent secondary vertex
+    img1.ellipse((center - 2, center - 2, center + 2, center + 2), fill=None, outline=0)
+
+    #Draw text in upper right hand corner to specify signal/background and also the event and vertex
+    if showTitle == False:
+        pass
+    else:
+        if IsSignal == True:
+            title = "Signal \nEvent = {" + str(event) + "} \nVertex = {" + str(vertex) + "}"
+        else:
+            title = "Background \nEvent = {" + str(event) + "} \nVertex = {" + str(vertex) + "}"
+        img1.text((w - 80, 0), title, align='center')
+
+    # Rotate components so that up direction points away from primary vertex
+    vtx_theta = calculateAngle(vtx_x0, vtx_y0)
+    x_final_list_rotated, y_final_list_rotated = RotateComponents(x_initial_list, y_initial_list, x_final_list,
+                                                                  y_final_list, vtx_theta)
+
+    # Draw Triangles
+    for i in range(len(x_final_list)):
+        shape = [(x_initial_list[i], y_initial_list[i]), (x_final_list_rotated[i], y_final_list_rotated[i])]
+        drawTriangle(shape, img1, center, dxy_err0[i], max_dxy_err, pt0[i], maxpt)
+        # drawLine(shape, img1, dxy_err0[i], max_dxy_err)
+    if ImageFilePath != None:
+        if IsSignal == True:
+            filepath = ImageFilePath + r"\signal\Evt {} Vtx {}.png".format(event, vertex)
+        else:
+            filepath = ImageFilePath + r"\background\Evt {} Vtx {}.png".format(event, vertex)
+        img.save(filepath)
+    else:
+        img.show()
+
+
+def Observe_N_Vertices(N, stree=None, btree=None, ImageFilePath=None, showTitle=False): #View or save N signal or background vertices, set N='all' to view all vertices
+    #Observe N signal vertices
+    if stree == None:
+        pass
+    else:
+        if N == 'all':
+            l = []
+            for event in range(len(stree['vtx_tk_px'].array())):
+                for vertex in range(len(stree['vtx_tk_px'].array()[event])):
+                    l.append(vertex)
+            N = len(l)
+        n = 1
+        while n <= N:
+            for event in range(len(stree['vtx_tk_px'].array())):
+                if n == N+1:
+                    break
+                for vertex in range(len(stree['vtx_tk_px'].array()[event])):
+                    createVertexImage(stree, btree, event, vertex, ImageFilePath=ImageFilePath, IsSignal=True, showTitle=showTitle)
+                    n+=1
+                    if n == N+1:
+                        break
+
+    #Observe N background vertices
+    if btree == None:
+        pass
+    else:
+        if N == 'all':
+            l = []
+            for event in range(len(btree['vtx_tk_px'].array())):
+                for vertex in range(len(btree['vtx_tk_px'].array()[event])):
+                    l.append(vertex)
+            N = len(l)
+        n = 1
+        while n <= N:
+            for event in range(len(btree['vtx_tk_px'].array())):
+                if n == N+1:
+                    break
+                for vertex in range(len(btree['vtx_tk_px'].array()[event])):
+                    createVertexImage(stree, btree, event, vertex, ImageFilePath=ImageFilePath, IsSignal=False, showTitle=showTitle)
+                    n+=1
+                    if n == N+1:
+                        break
+
+
 #Import ROOT files
 sigrootfile = r"C:\Users\Colby\Box Sync\Neu-work\Longlive master\roots\splitSUSY_tau000001000um_M2000_1800_2017_vertextree.root"
 bkgrootfile = r"C:\Users\Colby\Box Sync\Neu-work\Longlive master\roots\ttbar_2017_vertextree.root"
@@ -203,46 +320,6 @@ bfile = uproot.open(bkgrootfile)
 stree = sfile['mfvVertexTreer']['tree_DV']
 btree = bfile['mfvVertexTreer']['tree_DV']
 
-#Obtain momentum data
-px, py, pt, dxy, dxy_err, vtx_x, vtx_y = ObtainData(IsSignal=True)
-
-#Obtain max data
-Smaxpx, Smaxpy, Smaxpt, Smax_dxy_err = GetMaxVar(stree['vtx_tk_px'].array()), GetMaxVar(stree['vtx_tk_py'].array()),\
-                                       GetMaxVar(stree['vtx_tk_pt'].array()), GetMaxVar(stree['vtx_tk_dxyerr'].array())
-Bmaxpx, Bmaxpy, Bmaxpt, Bmax_dxy_err = GetMaxVar(btree['vtx_tk_px'].array()), GetMaxVar(btree['vtx_tk_py'].array()),\
-                                       GetMaxVar(btree['vtx_tk_pt'].array()), GetMaxVar(btree['vtx_tk_dxyerr'].array())
-maxpx, maxpy, maxpt, max_dxy_err = max(Smaxpx, Bmaxpx), max(Smaxpy, Bmaxpy), max(Smaxpt, Bmaxpt), max(Smax_dxy_err, Bmax_dxy_err)
-
-#Obtain first vertex data
-event, vertex = 0, 0
-px0 = px[event][vertex]
-py0 = py[event][vertex]
-pt0 = pt[event][vertex]
-dxy0 = dxy[event][vertex]
-vtx_x0 = vtx_x[event][vertex]
-vtx_y0 = vtx_y[event][vertex]
-dxy_err0 = dxy_err[event][vertex]
-
-#Calculate secondary dxy
-tk2_dx, tk2_dy = calculateSecondaryDXY(px0, py0, dxy0, vtx_x0, vtx_y0)
-
-#Create image
-w, h = 224, 224
-center = int(w/2)
-x_initial_list, y_initial_list, x_final_list, y_final_list = calculateXYImage(px0, py0, maxpx, maxpy, tk2_dx, tk2_dy, center, 4/5, 2)
-img = Image.new(mode='L', size=(w, h), color=255)
-img1 = ImageDraw.Draw(img)
-
-#Draw circle at image center to represent secondary vertex
-img1.ellipse((center-2,center-2,center+2,center+2), fill=None, outline=0)
-
-#Rotate components so that up direction points away from primary vertex
-vtx_theta = calculateAngle(vtx_x0, vtx_y0)
-x_final_list_rotated, y_final_list_rotated = RotateComponents(x_initial_list, y_initial_list, x_final_list, y_final_list, vtx_theta)
-
-#Draw Triangles
-for i in range(len(x_final_list)):
-    shape = [(x_initial_list[i], y_initial_list[i]), (x_final_list_rotated[i], y_final_list_rotated[i])]
-    #drawTriangle(shape, img1, center, dxy_err0[i], max_dxy_err, pt0[i], maxpt)
-    drawLine(shape, img1, dxy_err0[i], max_dxy_err)
-img.show()
+filepath = r"C:\Users\Colby\Box Sync\Neu-work\Longlive master\Vertex Images"
+#createVertexImage(stree, btree, event=0, vertex=0, ImageFilePath=None, IsSignal=True, showTitle=False)
+Observe_N_Vertices(20, stree, btree, ImageFilePath=filepath, showTitle=True)
