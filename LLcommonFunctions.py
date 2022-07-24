@@ -10,7 +10,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_curve, roc_auc_score
 
 
-def getLumiScaleFactor(_testingFraction=1., _isSignal=True, ll_nEventsGen=10e4, qcd_nEventsGen=int(660740*(62642/138509))):
+def getLumiScaleFactor(_testingFraction=1., _isSignal=True, ll_nEventsGen=10e4, qcd_nEventsGen=int(660740*(62642/138509)),
+                       ll_xsec=1, qcd_xsec=1):
     """ function to return lumi-scale for events used in testing and significance calculations """
 
     # *** 0. Set number of events and total HL-LHC lumi
@@ -21,8 +22,8 @@ def getLumiScaleFactor(_testingFraction=1., _isSignal=True, ll_nEventsGen=10e4, 
     nEventsGen = ll_nEventsGen if _isSignal else qcd_nEventsGen
 
     # *** 1. Set appropriate cross-section for sample
-    ll_xsec = 1  # fb
-    qcd_xsec = 1.1e6  # fb
+    ll_xsec = ll_xsec  # fb
+    qcd_xsec = qcd_xsec  # fb
     xsec = ll_xsec if _isSignal else qcd_xsec
 
     # *** 2. Caclulate sample lumi and nominal lumi-scale
@@ -138,7 +139,7 @@ def compareManyHistograms(_dict, _labels, _nPlot, _title, _xtitle, _xMin, _xMax,
             plt.hist(_dict[iLabel], bins=_bins, alpha=0.5, label=iLabel + ' Events')
 
     # set max y-value of histogram so there's room for legend
-    _yMax = 0.55 if _normed else _yMax
+    _yMax = 1 if _normed else _yMax
     axes = plt.gca()
     axes.set_ylim([0, _yMax])
 
@@ -194,7 +195,7 @@ def returnBestCutValue(_variable, _signal, _background, _method='S/sqrt(B)', _mi
     _signalLumiscale = getLumiScaleFactor(_testingFraction, _isSignal=True, ll_nEventsGen=ll_nEventsGen,
                                           qcd_nEventsGen=qcd_nEventsGen)
     _bkgLumiscale = getLumiScaleFactor(_testingFraction, _isSignal=False, ll_nEventsGen=ll_nEventsGen,
-                                       qcd_nEventsGen=qcd_nEventsGen)
+                                      qcd_nEventsGen=qcd_nEventsGen)
 
     _bestSignificance = -1
     _bestCutValue = -1
